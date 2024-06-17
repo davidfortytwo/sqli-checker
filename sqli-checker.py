@@ -8,11 +8,17 @@ import os
 import platform
 import sys
 
+# Global debug flag
+DEBUG = False
+
 def run_command(command):
-    print(f"Executing: {command}")
+    if DEBUG:
+        print(f"[DEBUG] Executing: {command}")
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = process.communicate()
-    print(stdout.decode(), stderr.decode())
+    if DEBUG:
+        print(f"[DEBUG] Output:\n{stdout.decode()}")
+        print(f"[DEBUG] Errors:\n{stderr.decode()}")
     return stdout.decode(), stderr.decode()
 
 def check_and_install_tools():
@@ -55,13 +61,20 @@ def fetch_urls_from_archive(domain, output_file):
         print(f"[+] URLs saved to {output_file}")
 
 def main():
+    global DEBUG
+
     parser = argparse.ArgumentParser(description="SQL Injection Hunter and Exploiter")
-    parser.add_argument("-d", "--domain", required=True, help="Target domain or IP address")
+    parser.add_argument("-t", "--target", required=True, help="Target domain or IP address")
     parser.add_argument("-o", "--output", required=True, help="Output file name")
+    parser.add_argument("-D", "--debug", action="store_true", help="Enable debug mode to show detailed output")
     args = parser.parse_args()
 
-    domain = args.domain
+    domain = args.target
     output_file = args.output
+    DEBUG = args.debug
+
+    if DEBUG:
+        print("[DEBUG] Debug mode enabled")
 
     # Step 1: Check and install necessary tools
     check_and_install_tools()
