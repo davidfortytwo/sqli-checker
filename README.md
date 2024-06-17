@@ -16,6 +16,7 @@ This tool automates the process of discovering and exploiting SQL injection vuln
 - subfinder
 - sqlihunter
 - sqlmap
+- waybackurls
 
 ## Installation
 
