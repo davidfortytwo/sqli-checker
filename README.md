@@ -29,14 +29,20 @@ This tool automates the process of discovering and exploiting SQL injection vuln
 
 ## Usage
 
-       ./sqli-checker.py -d <target_domain> -o <output_file>
-
-- `-d`, `--domain`: Specify the target domain or IP address
-- `-o`, `--output`: Specify the output file name
+       ./sqli-checker.py -t <target_domain> -o <output_file> [-D]
+ 
+       -t, --target: Specify the target domain or IP address.
+       -o, --output: Specify the output file name.
+       -D, --debug: Enable debug mode to show detailed output for troubleshooting.
 
 ## Example
 
     ./sqli-checker.py -d example.com -o results.txt
+
+With debug mode enabled:
+
+    ./sqli-checker.py -t example.com -o results.txt -D
+
 
 ## Legal Disclaimer
 
