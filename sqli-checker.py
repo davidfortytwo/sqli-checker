@@ -6,35 +6,59 @@ import argparse
 import subprocess
 import os
 import platform
+import shutil
 import sys
 
 # Global debug flag
 DEBUG = False
 
-def run_command(command):
+# sqlmap against a harvested URL list is legitimately slow.
+COMMAND_TIMEOUT = 900
+
+def run_command(argv, *, stdout_path=None, append=False, timeout=COMMAND_TIMEOUT):
+    """Execute argv and return (stdout, stderr) as text.
+
+    argv MUST be a list and MUST NOT be run through a shell. The -t/--target and
+    -o/--output values come from the command line and are interpolated into the
+    command, so a shell string turns `-t 'x; touch /tmp/pwned'` into arbitrary
+    code execution. List form passes every element to execve() untouched.
+    """
+    argv = [str(a) for a in argv]
     if DEBUG:
-        print(f"[DEBUG] Executing: {command}")
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, stderr = process.communicate()
+        print(f"[DEBUG] Executing: {argv}")
+
+    if stdout_path is not None:
+        # Replaces the old `cmd > file` / `cmd | tee -a file` shell pipelines.
+        mode = "a" if append else "w"
+        with open(stdout_path, mode, encoding="utf-8", errors="replace") as fh:
+            proc = subprocess.run(
+                argv, shell=False, stdout=fh, stderr=subprocess.PIPE, timeout=timeout
+            )
+        return "", proc.stderr.decode("utf-8", errors="replace")
+
+    proc = subprocess.run(
+        argv, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
+    )
+    stdout = proc.stdout.decode("utf-8", errors="replace")
+    stderr = proc.stderr.decode("utf-8", errors="replace")
     if DEBUG:
-        print(f"[DEBUG] Output:\n{stdout.decode()}")
-        print(f"[DEBUG] Errors:\n{stderr.decode()}")
-    return stdout.decode(), stderr.decode()
+        print(f"[DEBUG] Output:\n{stdout}")
+        print(f"[DEBUG] Errors:\n{stderr}")
+    return stdout, stderr
 
 def check_and_install_tools():
     tools = {
-        "waybackurls": {"check": "which waybackurls", "install": install_waybackurls},
-        "sqlmap": {"check": "which sqlmap", "install": install_sqlmap},
+        "waybackurls": install_waybackurls,
+        "sqlmap": install_sqlmap,
     }
-    for tool, actions in tools.items():
-        stdout, stderr = run_command(actions["check"])
-        if not stdout.strip():
+    for tool, install in tools.items():
+        if shutil.which(tool) is None:
             print(f"[!] {tool} not found. Installing...")
-            actions["install"]()
+            install()
 
 def install_waybackurls():
     if platform.system() == "Linux" or platform.system() == "Darwin":
-        run_command("go install github.com/tomnomnom/waybackurls@latest")
+        run_command(["go", "install", "github.com/tomnomnom/waybackurls@latest"])
         go_path = os.getenv("GOPATH", os.path.expanduser("~/go"))
         os.environ["PATH"] += os.pathsep + os.path.join(go_path, "bin")
     else:
@@ -42,9 +66,11 @@ def install_waybackurls():
 
 def install_sqlmap():
     if platform.system() == "Linux":
-        run_command("sudo apt update && sudo apt install sqlmap -y")
+        # Two calls instead of the old `apt update && apt install` shell string.
+        run_command(["sudo", "apt", "update"])
+        run_command(["sudo", "apt", "install", "-y", "sqlmap"])
     elif platform.system() == "Darwin":
-        run_command("brew install sqlmap")
+        run_command(["brew", "install", "sqlmap"])
     elif platform.system() == "Windows":
         print("[!] Please download and install SQLMap from https://sqlmap.org/ manually.")
     else:
@@ -52,9 +78,13 @@ def install_sqlmap():
 
 def fetch_urls_from_archive(domain, output_file):
     print(f"[+] Fetching URLs from archive.org for {domain}...")
-    waybackurls_command = f"waybackurls {domain} > {output_file}"
-    stdout, stderr = run_command(waybackurls_command)
-    if stderr:
+    waybackurls = shutil.which("waybackurls")
+    if waybackurls is None:
+        print("[!] waybackurls is not available; cannot fetch URLs from archive.org.")
+        return
+    # stdout is redirected by handing subprocess a file handle, not via `> file`.
+    stdout, stderr = run_command([waybackurls, "--", domain], stdout_path=output_file)
+    if stderr.strip():
         print("Errors fetching URLs from archive.org:")
         print(stderr)
     else:
@@ -90,8 +120,17 @@ def main():
 
     # Step 3: Run sqlmap
     print("[+] Running sqlmap on discovered URLs...")
-    sqlmap_command = f"sqlmap -m {sqliurls_file} --batch --dbs --risk 2 --level 5 --random-agent | tee -a {output_file}"
-    stdout, stderr = run_command(sqlmap_command)
+    sqlmap = shutil.which("sqlmap")
+    if sqlmap is None:
+        print("Error: sqlmap not found. Install it and re-run.")
+        return
+    stdout, stderr = run_command(
+        [sqlmap, "-m", sqliurls_file, "--batch", "--dbs", "--risk", "2", "--level", "5", "--random-agent"]
+    )
+
+    # Replaces the old `... | tee -a <output>` pipeline.
+    with open(output_file, "a", encoding="utf-8", errors="replace") as fh:
+        fh.write(stdout)
 
     # Print sqlmap output
     print(stdout)
